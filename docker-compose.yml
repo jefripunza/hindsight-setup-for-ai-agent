@@ -1,0 +1,103 @@
+name: hindsight
+
+# NOTE: All persistent data uses BIND MOUNTS into local directories under
+# ./data/ so that `podman-compose down` (even without -v) NEVER deletes your
+# knowledge base. Named volumes would be wiped by Docker/Podman on
+# `down -v` and are easy to lose track of.
+# Layout:
+#   data/db        -> Postgres + pgvector data directory
+#   data/tei       -> TEI model cache (HuggingFace downloads, ~466MB)
+#   data/hindsight -> Hindsight app persistent state (logs, temp, etc.)
+
+services:
+  # ============================================================
+  # PostgreSQL with pgvector
+  # ============================================================
+  db:
+    image: pgvector/pgvector:pg18
+    container_name: hindsight-db
+    restart: unless-stopped
+    init: true
+    user: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: hindsight_user
+      POSTGRES_PASSWORD: hindsight_pass
+      POSTGRES_DB: hindsight_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      # Bind-mount to host folder so data survives container recreate.
+      # We bind the parent /var/lib/postgresql (Postgres refuses to run
+      # if PGDATA's parent isn't owned by postgres). The container init
+      # creates data/pgdata inside it on first boot; subsequent boots
+      # find the existing files. Always readable by uid 999 (postgres).
+      - ./data/db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hindsight_user -d hindsight_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - hindsight-net
+
+  # ============================================================
+  # TEI — Reranker (cross-encoder/mmarco-mMiniLMv2-L12-H384-v1)
+  # ============================================================
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    container_name: hindsight-tei
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      MODEL_ID: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+      PORT: "8080"
+    command: ["--model-id", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", "--port", "8080"]
+    volumes:
+      - ./data/tei:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    networks:
+      hindsight-net:
+        aliases:
+          - tei
+
+  # ============================================================
+  # Hindsight — Agent Memory System (API + UI)
+  # ============================================================
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:latest-slim
+    container_name: hindsight-app
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+      - "9999:9999"
+    env_file:
+      - .env
+    volumes:
+      # Hindsight app state (logs, tmp, etc.) -> host folder
+      - ./data/hindsight:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      tei:
+        condition: service_started
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+    networks:
+      - hindsight-net
+
+networks:
+  hindsight-net:
+    driver: bridge
+
+# IMPORTANT: Do NOT define a `volumes:` block. All persistence is via
+# bind-mounts into ./data/* above, so `podman-compose down` is safe and
+# your memories survive forever.
+

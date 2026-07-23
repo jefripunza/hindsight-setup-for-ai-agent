@@ -1,0 +1,18 @@
+# Secrets — never commit
+.env
+
+# Persistent data — bind-mounted volumes
+data/
+
+# OS garbage
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
