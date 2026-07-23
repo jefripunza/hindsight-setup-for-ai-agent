@@ -19,6 +19,7 @@ services:
     restart: unless-stopped
     init: true
     user: postgres
+    shm_size: 256m
     ports:
       - "5432:5432"
     environment:
