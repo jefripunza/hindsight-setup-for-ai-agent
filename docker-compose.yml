@@ -55,7 +55,7 @@ services:
     environment:
       MODEL_ID: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
       PORT: "8080"
-    command: ["--model-id", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", "--port", "8080", "--max-client-batch-size", "64"]
+    command: ["--model-id", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", "--port", "8080", "--max-client-batch-size", "128"]
     volumes:
       - ./data/tei:/data
     healthcheck:
